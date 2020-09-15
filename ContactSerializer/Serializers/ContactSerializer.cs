@@ -6,7 +6,7 @@ using System.Text;
 using System.Runtime.Serialization;
 using System.Reflection;
 using ContactSerializer.Models;
-using ContactSerializer.Serializers.Models;
+using NonSerializedAttribute = ContactSerializer.Attributes.NonSerializedAttribute;
 
 namespace ContactSerializer.Serializers
 {
@@ -30,57 +30,49 @@ namespace ContactSerializer.Serializers
             return false;
         }
 
-        public void Serialize(Contact person)
+        public void Serialize(IEnumerable<Contact> persons)
         {
-            if (!IsSerializable(person))
-                throw new SerializationException();
-
             StringBuilder stringBuilder = new StringBuilder();
 
-            Type type = typeof(Contact);
-            foreach (var prop in type.GetProperties())
-            {
-                if (prop.Name.Equals("Age", StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                stringBuilder.Append("[");
-                stringBuilder.Append(prop.Name);
-                stringBuilder.Append(":");
-                stringBuilder.Append(prop.GetValue(person));
-                stringBuilder.Append("]");
-            }
-
-            File.WriteAllText(_filePath, stringBuilder.ToString());
-        }
-
-        public static void Serialize<T>(ICollection<ContactSerializeData> persons)
-        {
             foreach (var person in persons)
             {
-                if (!IsSerializable(person.Contact))
+                stringBuilder.Append("{");
+
+                if (!IsSerializable(person))
                     throw new SerializationException();
 
-                StringBuilder stringBuilder = new StringBuilder();
-
-                foreach (var prop in typeof(T).GetProperties())
+                Type type = typeof(Contact);
+                foreach (var prop in type.GetProperties())
                 {
-                    if (prop.Name.Equals("Age", StringComparison.OrdinalIgnoreCase))
+                    if (prop.IsDefined(typeof(NonSerializedAttribute)))
                         continue;
 
-                    stringBuilder.Append("[");
-                    stringBuilder.Append(prop.Name);
-                    stringBuilder.Append(":");
-                    stringBuilder.Append(prop.GetValue(person.Contact));
-                    stringBuilder.Append("]");
+                    if (!prop.PropertyType.Name.Equals("Address", StringComparison.OrdinalIgnoreCase))
+                    {
+                        stringBuilder.Append($"[{ prop.Name }:{ prop.GetValue(person) }]");
+                    }
+                    else
+                    {
+                        stringBuilder.Append($"<{prop.Name}:");
+
+                        foreach (var propInner in prop.PropertyType.GetProperties())
+                        {
+                            stringBuilder.Append($"[{ propInner.Name }:{ propInner.GetValue(person.Address) }]");
+                        }
+
+                        stringBuilder.Append(">");
+                    }
                 }
+                stringBuilder.Append("}");
+            }
 
-                File.WriteAllText(person.PathSave, stringBuilder.ToString());
-
-                stringBuilder.Clear();
+            using (StreamWriter file = File.AppendText(_filePath))
+            {
+                file.WriteLine(stringBuilder.ToString());
             }
         }
 
-        private static List<string> GetPropsList(string data, string startString = "[", string endString = "]")
+        private IEnumerable<string> GetPropsList(string data, string startString = "[", string endString = "]")
         {
             List<string> props = new List<string>();
 
@@ -104,7 +96,7 @@ namespace ContactSerializer.Serializers
             return props;
         }
 
-        private static List<(string propName, string propValue)> GetPropsWithValue(string data, string propSplitChar = "=")
+        private IEnumerable<(string propName, string propValue)> GetPropsWithValue(string data, string propSplitChar = "=")
         {
             List<(string propName, string propValue)> props = new List<(string propName, string propValue)>();
 
@@ -113,64 +105,70 @@ namespace ContactSerializer.Serializers
                 int startIndex = prop.IndexOf(":");
 
                 props.Add((
-                    prop.Substring(0, startIndex),
-                    prop.Substring(startIndex + propSplitChar.Length)
-                    ));
+                        prop.Substring(0, startIndex),
+                        prop.Substring(startIndex + propSplitChar.Length)
+                        ));
             }
 
             return props;
         }
 
-        private static void SetContactPropsData<T>(T contact, (string propName, string propValue) prop)
+        private void SetContactPropsData<T>(T contact, (string propName, string propValue) prop)
         {
+            Type type = typeof(T);
+
             var propInfo = typeof(T).GetProperty(prop.propName);
 
-            if (propInfo.PropertyType.IsEnum)
-                propInfo?.SetValue(contact, Enum.Parse(propInfo.PropertyType, prop.propValue));
+            if (type.GetProperty(prop.propName) != null)
+            {
+                if (propInfo.PropertyType.IsEnum)
+                    propInfo?.SetValue(contact, Enum.Parse(propInfo.PropertyType, prop.propValue));
+                else
+                    propInfo?.SetValue(contact, Convert.ChangeType(prop.propValue, propInfo.PropertyType));
+            }
             else
-                propInfo?.SetValue(contact, Convert.ChangeType(prop.propValue, propInfo.PropertyType));
+            {
+                IEnumerable<(PropertyInfo propInfo, string name)> innerClases = contact.GetType()
+                    .GetProperties()
+                    .Where(pi => !pi.PropertyType.Namespace.StartsWith("System"))
+                    .Where(pi => pi.PropertyType.GetProperties().FirstOrDefault(piInner => piInner.Name == prop.propName) != null)
+                    .Select((pi) => (pi, pi.Name));
+                // find type with true prop in current deserized class
+
+                foreach (var trueProp in innerClases)
+                {
+                    Type innerType = trueProp.propInfo.PropertyType;
+                    propInfo = innerType.GetProperty(prop.propName);
+
+                    object newObject = type.GetProperty(trueProp.name).GetValue(contact) ?? Activator.CreateInstance(innerType);
+
+                    var innerClassProp = type.GetProperty(innerType.Name);
+
+                    if (propInfo.PropertyType.IsEnum)
+                        propInfo?.SetValue(newObject, Enum.Parse(propInfo.PropertyType, prop.propValue));
+                    else
+                        propInfo?.SetValue(newObject, Convert.ChangeType(prop.propValue, propInfo.PropertyType));
+
+                    innerClassProp?.SetValue(contact, newObject); // set data to inner class
+                }
+            }
         }
 
-        public Contact Deserialize()
+        public IEnumerable<Contact> Deserialize()
         {
             if (!File.Exists(_filePath))
                 throw new FileNotFoundException();
 
-            Contact contact = new Contact();
+            List<Contact> contacts = new List<Contact>();
 
             string data = File.ReadAllText(_filePath);
-            foreach (var prop in GetPropsWithValue(data))
+            foreach (var contactStr in GetPropsList(data, "{", "}"))
             {
-                SetContactPropsData(contact, prop);
-            }
-
-            return contact;
-        }
-
-        /// <summary>
-        /// Deserialize file from paths, path with file extension
-        /// </summary>
-        /// <typeparam name="T">Contact</typeparam>
-        /// <param name="paths">Paths to files</param>
-        /// <returns>Return deserialize collection T</returns>
-        public static ICollection<T> Deserialize<T>(ICollection<string> paths)
-            where T : new()
-        {
-            if(paths.Any(path => !File.Exists(path)))
-                throw new FileNotFoundException();
-
-            List<T> contacts = new List<T>();
-
-            foreach (var path in paths)
-            {
-                T contact = new T();
-
-                string data = File.ReadAllText(path);
-                foreach (var prop in GetPropsWithValue(data))
+                Contact contact = new Contact();
+                foreach (var prop in GetPropsWithValue(contactStr))
                 {
                     SetContactPropsData(contact, prop);
                 }
-
                 contacts.Add(contact);
             }
 

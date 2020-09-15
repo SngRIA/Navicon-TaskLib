@@ -1,6 +1,7 @@
 ﻿using System;
 using ContactSerializer.Attributes;
 using ContactSerializer.Enums;
+using NonSerializedAttribute = ContactSerializer.Attributes.NonSerializedAttribute;
 
 namespace ContactSerializer.Models
 {
@@ -9,38 +10,45 @@ namespace ContactSerializer.Models
     public sealed class Contact : ICloneable
     {
         [StringLengthLimit()]
-        public string LastName 
-        { 
-            get; set; 
+        public string LastName
+        {
+            get; set;
         }
         [StringLengthLimit()]
-        public string FirstName 
-        { 
-            get; set; 
+        public string FirstName
+        {
+            get; set;
         }
         [StringLengthLimit()]
         public string MiddleName
-        { 
-            get; set; 
-        }
-        public Gender Gender 
         {
-            get; set; 
+            get; set;
+        }
+        public Gender Gender
+        {
+            get; set;
         }
         [DateLimit(year: 1999, month: 2, day: 22)]
-        public DateTime Birthday 
-        { 
-            get; set; 
+        public DateTime Birthday
+        {
+            get; set;
         }
-        public string ITN 
-        { 
-            get; set; 
+        public string ITN
+        {
+            get; set;
         }
         [RegEx(@"^\+?7(9\d{9})$")]
-        public string PhoneNumber 
-        { 
-            get; set; 
+        public string PhoneNumber
+        {
+            get; set;
         }
+
+        public Address Address
+        {
+            get; set;
+        }
+
+        [NonSerialized()]
         public int Age 
         {
             get => DateTime.Today.Year - Birthday.Year;
@@ -48,7 +56,7 @@ namespace ContactSerializer.Models
         public Contact() { }
 
         public Contact(string lastName, string firstName, string middleName,
-            Gender gender, DateTime birthday, string iTN, string phoneNumber)
+            Gender gender, DateTime birthday, string iTN, string phoneNumber, Address address)
         {
             LastName = lastName;
             FirstName = firstName;
@@ -57,6 +65,7 @@ namespace ContactSerializer.Models
             Birthday = birthday;
             ITN = iTN;
             PhoneNumber = phoneNumber;
+            Address = address;
         }
 
         public override string ToString()

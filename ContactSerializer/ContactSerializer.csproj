@@ -49,13 +49,15 @@
   <ItemGroup>
     <Compile Include="Attributes\DateLimitAttribute.cs" />
     <Compile Include="Attributes\DescriptionAttribute.cs" />
+    <Compile Include="Attributes\NonSerializedAttribute.cs" />
     <Compile Include="Attributes\RegExAttribute.cs" />
     <Compile Include="Attributes\StringLengthLimitAttribute.cs" />
+    <Compile Include="Enums\AddressType.cs" />
     <Compile Include="Enums\Gender.cs" />
+    <Compile Include="Models\Address.cs" />
     <Compile Include="Models\Contact.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Serializers\ContactSerializer.cs" />
-    <Compile Include="Serializers\Models\ContactSerializeData.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="newKey.snk" />
